@@ -2,6 +2,23 @@ import { TemplateVariable } from '../types/template';
 import { VariableType } from '../types/enums';
 import { VariableValues } from '../types/contract-instance';
 
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isValidDateString(value: string): boolean {
+  if (!DATE_REGEX.test(value)) return false;
+  const [yearStr, monthStr, dayStr] = value.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  if (year < 100 || month < 1 || month > 12 || day < 1) return false;
+  const date = new Date(year, month - 1, day);
+  return (
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+  );
+}
+
 export function validateVariables(
   variables: TemplateVariable[],
   values: VariableValues
@@ -33,9 +50,8 @@ export function validateVariables(
         break;
       }
       case VariableType.Date: {
-        const date = new Date(strValue);
-        if (Number.isNaN(date.getTime())) {
-          errors[variable.name] = `${variable.label || variable.name} 必须是有效的日期`;
+        if (!isValidDateString(strValue)) {
+          errors[variable.name] = `${variable.label || variable.name} 必须是 YYYY-MM-DD 格式的有效日期`;
         }
         break;
       }
