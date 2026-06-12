@@ -10,26 +10,12 @@ import { useTemplateStore } from '../stores/template';
 import { useVersionStore } from '../stores/version';
 import { ContractStatus, CONTRACT_STATUS_LABELS } from '../types/enums';
 import { VariableValues } from '../types/contract-instance';
+import { formatValidationMessage, validateVariables } from '../utils/validation';
 
 const statusOptions = Object.values(ContractStatus).map((value) => ({
   label: CONTRACT_STATUS_LABELS[value],
   value
 }));
-
-function validateRequiredVariables(
-  variables: { name: string; label: string; required: boolean }[],
-  values: VariableValues
-): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const variable of variables) {
-    if (!variable.required) continue;
-    const value = values[variable.name];
-    if (value == null || String(value).trim() === '') {
-      errors[variable.name] = `请填写${variable.label || variable.name}`;
-    }
-  }
-  return errors;
-}
 
 export function InstanceEditor() {
   const { id } = useParams();
@@ -63,7 +49,7 @@ export function InstanceEditor() {
   const doValidate = useCallback(
     (focusFirst = true): Record<string, string> => {
       if (!template) return {};
-      const result = validateRequiredVariables(template.variables, values);
+      const result = validateVariables(template.variables, values);
       setErrors(result);
       if (focusFirst && Object.keys(result).length > 0) {
         const firstField = Object.keys(result)[0];
@@ -111,7 +97,7 @@ export function InstanceEditor() {
   const saveInstance = async () => {
     const validationErrors = doValidate(true);
     if (Object.keys(validationErrors).length > 0) {
-      Message.warning('请填写所有必填变量后再保存');
+      Message.warning('存在未填或格式不正确的变量，请检查后再保存');
       return;
     }
     await updateInstance(buildNextInstance());
@@ -121,7 +107,7 @@ export function InstanceEditor() {
   const saveSnapshot = async () => {
     const validationErrors = doValidate(true);
     if (Object.keys(validationErrors).length > 0) {
-      Message.warning('请填写所有必填变量后再保存版本');
+      Message.warning('存在未填或格式不正确的变量，请检查后再保存版本');
       return;
     }
     const nextInstance = buildNextInstance();
@@ -142,9 +128,7 @@ export function InstanceEditor() {
         const label = CONTRACT_STATUS_LABELS[nextStatus];
         Modal.warning({
           title: '无法切换状态',
-          content: `以下必填变量未填写，不可流转至「${label}」：\n${Object.values(validationErrors)
-            .map((msg) => `• ${msg}`)
-            .join('\n')}`,
+          content: `以下变量未填或格式不正确，不可流转至「${label}」：\n${formatValidationMessage(validationErrors)}`,
           okText: '知道了'
         });
         return;
