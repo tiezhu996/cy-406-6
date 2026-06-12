@@ -1,8 +1,8 @@
-import { Button, Input, Message, Select, Space, Typography } from '@arco-design/web-react';
+import { Button, Input, Message, Modal, Select, Space, Typography } from '@arco-design/web-react';
 import { IconHistory, IconSave } from '@arco-design/web-react/icon';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { VariableForm } from '../components/common';
+import { VariableForm, VariableFormRef } from '../components/common';
 import { ContractPreview } from '../components/preview/ContractPreview';
 import { useVariableReplace } from '../hooks/useVariableReplace';
 import { useInstanceStore } from '../stores/instance';
@@ -16,13 +16,30 @@ const statusOptions = Object.values(ContractStatus).map((value) => ({
   value
 }));
 
+function validateRequiredVariables(
+  variables: { name: string; label: string; required: boolean }[],
+  values: VariableValues
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  for (const variable of variables) {
+    if (!variable.required) continue;
+    const value = values[variable.name];
+    if (value == null || String(value).trim() === '') {
+      errors[variable.name] = `请填写${variable.label || variable.name}`;
+    }
+  }
+  return errors;
+}
+
 export function InstanceEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const formRef = useRef<VariableFormRef>(null);
   const [values, setValues] = useState<VariableValues>({});
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState(ContractStatus.Draft);
   const [remark, setRemark] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const { instances, loadInstances, updateInstance } = useInstanceStore();
   const { templates, loadTemplates } = useTemplateStore();
   const { loadVersions, saveVersion } = useVersionStore();
@@ -43,6 +60,42 @@ export function InstanceEditor() {
     }
   }, [instance]);
 
+  const doValidate = useCallback(
+    (focusFirst = true): Record<string, string> => {
+      if (!template) return {};
+      const result = validateRequiredVariables(template.variables, values);
+      setErrors(result);
+      if (focusFirst && Object.keys(result).length > 0) {
+        const firstField = Object.keys(result)[0];
+        formRef.current?.scrollToField(firstField);
+      }
+      return result;
+    },
+    [template, values]
+  );
+
+  const clearFieldError = useCallback(
+    (fieldName: string) => {
+      setErrors((prev) => {
+        if (!prev[fieldName]) return prev;
+        const next = { ...prev };
+        delete next[fieldName];
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleValuesChange = useCallback(
+    (next: VariableValues) => {
+      setValues(next);
+      for (const key of Object.keys(next)) {
+        clearFieldError(key);
+      }
+    },
+    [clearFieldError]
+  );
+
   if (!instance || !template) {
     return <div className="empty-state">正在加载合同实例...</div>;
   }
@@ -56,11 +109,21 @@ export function InstanceEditor() {
   });
 
   const saveInstance = async () => {
+    const validationErrors = doValidate(true);
+    if (Object.keys(validationErrors).length > 0) {
+      Message.warning('请填写所有必填变量后再保存');
+      return;
+    }
     await updateInstance(buildNextInstance());
     Message.success('合同实例已保存');
   };
 
   const saveSnapshot = async () => {
+    const validationErrors = doValidate(true);
+    if (Object.keys(validationErrors).length > 0) {
+      Message.warning('请填写所有必填变量后再保存版本');
+      return;
+    }
     const nextInstance = buildNextInstance();
     await updateInstance(nextInstance);
     const version = await saveVersion(nextInstance, remark);
@@ -70,6 +133,25 @@ export function InstanceEditor() {
     });
     setRemark('');
     Message.success(`已保存版本 ${version.versionNo}`);
+  };
+
+  const handleStatusChange = (nextStatus: ContractStatus) => {
+    if (nextStatus === ContractStatus.Finalized || nextStatus === ContractStatus.Signed) {
+      const validationErrors = doValidate(true);
+      if (Object.keys(validationErrors).length > 0) {
+        const label = CONTRACT_STATUS_LABELS[nextStatus];
+        Modal.warning({
+          title: '无法切换状态',
+          content: `以下必填变量未填写，不可流转至「${label}」：\n${Object.values(validationErrors)
+            .map((msg) => `• ${msg}`)
+            .join('\n')}`,
+          okText: '知道了'
+        });
+        return;
+      }
+    }
+    setStatus(nextStatus);
+    setErrors({});
   };
 
   return (
@@ -94,7 +176,7 @@ export function InstanceEditor() {
 
       <div className="instance-meta-bar">
         <Input value={title} onChange={setTitle} placeholder="实例标题" />
-        <Select value={status} options={statusOptions} onChange={setStatus} />
+        <Select value={status} options={statusOptions} onChange={handleStatusChange} />
         <Input value={remark} onChange={setRemark} placeholder="版本备注，例如：客户首轮修改" />
       </div>
 
@@ -102,7 +184,7 @@ export function InstanceEditor() {
         <ContractPreview title={title || instance.title} html={previewHtml} />
         <div className="form-panel">
           <Typography.Title heading={5}>变量填写</Typography.Title>
-          <VariableForm variables={template.variables} values={values} onChange={setValues} />
+          <VariableForm ref={formRef} variables={template.variables} values={values} onChange={handleValuesChange} errors={errors} />
         </div>
       </div>
     </section>

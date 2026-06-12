@@ -298,6 +298,18 @@ body {
   width: 100%;
 }
 
+.variable-form [id^="var-field-"].arco-form-item-error {
+  padding: 8px 10px;
+  margin: -8px -10px;
+  border-radius: 6px;
+  background: rgba(247, 199, 195, 0.15);
+  transition: background 0.2s;
+}
+
+.variable-form [id^="var-field-"].arco-form-item-error .arco-form-item-label-text {
+  color: var(--redwood);
+}
+
 .version-selector {
   margin-bottom: 16px;
 }
